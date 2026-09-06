@@ -1,4 +1,5 @@
 using System.Windows;
+using Murmur.History;
 using Murmur.Hotkey;
 using Murmur.Injection;
 using Murmur.Speech;
@@ -10,6 +11,7 @@ public partial class MainWindow : Window
     private HotkeyManager? _hotkeyManager;
     private ISpeechEngine? _speechEngine;
     private readonly ClipboardInjector _injector = new();
+    private readonly HistoryStore _historyStore = new();
 
     public MainWindow()
     {
@@ -62,9 +64,15 @@ public partial class MainWindow : Window
                 // set -> paste -> restore) that shouldn't block the UI thread while
                 // it waits out its settle delays.
                 _ = _injector.InjectAsync(text);
+                _historyStore.Add(text);
             });
 
         TalkStateText.Text = "Idle";
+    }
+
+    private void OnHistoryButtonClick(object sender, RoutedEventArgs e)
+    {
+        new HistoryWindow(_historyStore) { Owner = this }.Show();
     }
 
     private void OnClosed(object? sender, EventArgs e)

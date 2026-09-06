@@ -10,5 +10,7 @@
         <TextBlock x:Name="TalkStateText" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,8"/>
         <TextBox x:Name="TranscriptBox" Height="80" TextWrapping="Wrap"
                  AcceptsReturn="True" VerticalScrollBarVisibility="Auto" IsReadOnly="True"/>
+        <Button x:Name="HistoryButton" Content="History" Margin="0,8,0,0"
+                HorizontalAlignment="Left" Padding="8,2" Click="OnHistoryButtonClick"/>
     </StackPanel>
 </Window>

@@ -25,6 +25,9 @@
          Privacy > Microphone. Neither is guaranteed present; SystemSpeechEngine
          degrades to IsAvailable = false rather than throwing when missing. -->
     <PackageReference Include="System.Speech" Version="8.0.0" />
+    <!-- Local, file-based transcription history (%AppData%\Murmur\history.db).
+         No server, no ORM needed for one table. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
   </ItemGroup>
 
 </Project>

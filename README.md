@@ -4,9 +4,10 @@ Local push-to-talk dictation for Windows 10/11 (x64). No cloud calls.
 
 ## Status
 
-Phase 1-3: app skeleton, global hotkey trigger, Windows native speech (SAPI)
-wired to hold-to-talk, and clipboard+Ctrl-V text injection into the
-foreground app. Built and written on a non-Windows container —
+Phase 1-3 + history: app skeleton, global hotkey trigger, Windows native
+speech (SAPI) wired to hold-to-talk, clipboard+Ctrl-V text injection into the
+foreground app, and a persisted, browsable transcription history. Built and
+written on a non-Windows container —
 **not yet compiled or run on Windows**. Open `Murmur.sln` in Visual Studio
 (or `dotnet build` / `dotnet run` from `src/Murmur`) on a Windows machine to
 verify before relying on it.
@@ -53,10 +54,18 @@ integration points. Simpler alternatives were chosen deliberately:
   restores whatever was on the clipboard before. Runs unconditionally (not
   as a SendInput fallback) so there's one code path across Win32/WPF/
   Electron/browser targets.
+- `src/Murmur/History/HistoryStore.cs` — persists each finalized
+  transcription to a local SQLite file at `%AppData%\Murmur\history.db`, one
+  short-lived connection per read/write. Degrades to `IsAvailable = false` /
+  silently-skipped writes on any failure (disk full, permissions, corrupt
+  file) rather than surfacing as a dictation failure.
+- `src/Murmur/HistoryWindow.xaml(.cs)` — lists all stored transcriptions,
+  newest first, opened from the "History" button on the main window.
 - `src/Murmur/MainWindow.xaml(.cs)` — window showing hotkey/speech
-  availability, live talk state, and the transcript box, for manual
-  verification. Holding Right Ctrl should start listening, releasing should
-  finalize the transcript and paste it into whatever window has focus.
+  availability, live talk state, the transcript box, and a History button,
+  for manual verification. Holding Right Ctrl should start listening,
+  releasing should finalize the transcript, paste it into whatever window
+  has focus, and add it to history.
 
 ## Known limitations
 
@@ -71,12 +80,14 @@ integration points. Simpler alternatives were chosen deliberately:
 - If Murmur's own window has focus when dictation finishes, the paste lands
   in Murmur's transcript box — same behavior as a normal manual paste, but
   worth confirming isn't surprising in practice.
-- No history or custom dictionary yet.
+- No custom dictionary yet; history has no delete/search/export either —
+  browse-only for now.
 
 ## Next steps (not yet done)
 
 1. Verify this skeleton builds, the hotkey fires, dictation produces text,
-   and injection actually lands in VS Code, Cursor, and Slack on Windows —
-   tune the settle delays in `ClipboardInjector` against what's observed.
+   injection actually lands in VS Code, Cursor, and Slack, and history
+   persists across restarts — all on real Windows. Tune the settle delays in
+   `ClipboardInjector` against what's observed.
 2. Optional Vosk secondary engine.
-3. History window (SQLite) + custom dictionary.
+3. Custom dictionary for forcing correct transcription of technical terms.
