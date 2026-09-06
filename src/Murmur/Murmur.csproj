@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <AssemblyName>Murmur</AssemblyName>
+    <RootNamespace>Murmur</RootNamespace>
+    <!-- Global keyboard hooks / SendInput-style APIs are the exact behaviors AV
+         heuristics flag. An unsigned build is far more likely to be quarantined
+         or SmartScreen-blocked. Authenticode signing happens at release/packaging
+         time (see docs/deployment.md); this project setting just documents the
+         requirement so it isn't lost. -->
+    <SignAssembly>false</SignAssembly>
+  </PropertyGroup>
+
+</Project>

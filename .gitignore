@@ -1,0 +1,14 @@
+## .NET / Visual Studio
+bin/
+obj/
+*.user
+.vs/
+*.suo
+
+## Rider
+.idea/
+
+## Build output
+*.dll
+*.exe
+*.pdb
