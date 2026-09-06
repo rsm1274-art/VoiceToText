@@ -1,5 +1,6 @@
 using System.Windows;
 using Murmur.Hotkey;
+using Murmur.Injection;
 using Murmur.Speech;
 
 namespace Murmur;
@@ -8,6 +9,7 @@ public partial class MainWindow : Window
 {
     private HotkeyManager? _hotkeyManager;
     private ISpeechEngine? _speechEngine;
+    private readonly ClipboardInjector _injector = new();
 
     public MainWindow()
     {
@@ -53,7 +55,14 @@ public partial class MainWindow : Window
         _speechEngine.PartialResultRecognized += (_, text) =>
             Dispatcher.Invoke(() => TranscriptBox.Text = text);
         _speechEngine.FinalResultRecognized += (_, text) =>
-            Dispatcher.Invoke(() => TranscriptBox.Text = text);
+            Dispatcher.Invoke(() =>
+            {
+                TranscriptBox.Text = text;
+                // Fire-and-forget: injection is a background async flow (clipboard
+                // set -> paste -> restore) that shouldn't block the UI thread while
+                // it waits out its settle delays.
+                _ = _injector.InjectAsync(text);
+            });
 
         TalkStateText.Text = "Idle";
     }

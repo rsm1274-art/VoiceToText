@@ -4,8 +4,9 @@ Local push-to-talk dictation for Windows 10/11 (x64). No cloud calls.
 
 ## Status
 
-Phase 1 + 2: app skeleton, global hotkey trigger, and Windows native speech
-(SAPI) wired to hold-to-talk. Built and written on a non-Windows container —
+Phase 1-3: app skeleton, global hotkey trigger, Windows native speech (SAPI)
+wired to hold-to-talk, and clipboard+Ctrl-V text injection into the
+foreground app. Built and written on a non-Windows container —
 **not yet compiled or run on Windows**. Open `Murmur.sln` in Visual Studio
 (or `dotnet build` / `dotnet run` from `src/Murmur`) on a Windows machine to
 verify before relying on it.
@@ -24,8 +25,8 @@ integration points. Simpler alternatives were chosen deliberately:
 | Concern | Rejected | Chosen | Why |
 |---|---|---|---|
 | Hotkey trigger | `SetWindowsHookEx(WH_KEYBOARD_LL)` | `RegisterHotKey` + bounded `GetAsyncKeyState` poll of the *same* key | A global hook sees every keystroke on the machine — a keylogger signature. `RegisterHotKey` only ever sees the one registered combo. |
-| Text injection | `SendInput` with an Electron-detection fallback | Clipboard + simulated Ctrl+V, always | One code path instead of two; works uniformly across Win32/WPF/Electron/browser targets. Not yet implemented (phase 3). |
-| Secondary STT engine | Parakeet TDT via ONNX Runtime | Windows built-in speech only, or Vosk if a second engine is wanted later | Skips ONNX Runtime, execution-provider tuning, and NeMo→ONNX conversion/licensing risk entirely. Not yet implemented (phase 2+). |
+| Text injection | `SendInput` with an Electron-detection fallback | Clipboard + simulated Ctrl+V, always | One code path instead of two; works uniformly across Win32/WPF/Electron/browser targets. |
+| Secondary STT engine | Parakeet TDT via ONNX Runtime | Windows built-in speech only, or Vosk if a second engine is wanted later | Skips ONNX Runtime, execution-provider tuning, and NeMo→ONNX conversion/licensing risk entirely. Not yet implemented. |
 
 ## Current pieces
 
@@ -44,10 +45,18 @@ integration points. Simpler alternatives were chosen deliberately:
   live partial and the final result. Degrades to `IsAvailable = false` if no
   recognizer/language pack or default microphone is present, rather than
   throwing on construction.
+- `src/Murmur/Injection/NativeMethods.cs` — `SendInput` P/Invoke, used only
+  to simulate the Ctrl+V keystroke, never to inject characters directly
+  (direct injection is known to silently no-op in Electron apps).
+- `src/Murmur/Injection/ClipboardInjector.cs` — saves the clipboard, sets it
+  to the dictated text, simulates Ctrl+V to the foreground window, then
+  restores whatever was on the clipboard before. Runs unconditionally (not
+  as a SendInput fallback) so there's one code path across Win32/WPF/
+  Electron/browser targets.
 - `src/Murmur/MainWindow.xaml(.cs)` — window showing hotkey/speech
   availability, live talk state, and the transcript box, for manual
-  verification. Holding Right Ctrl should start listening and fill the
-  transcript box; releasing should finalize it.
+  verification. Holding Right Ctrl should start listening, releasing should
+  finalize the transcript and paste it into whatever window has focus.
 
 ## Known limitations
 
@@ -56,14 +65,18 @@ integration points. Simpler alternatives were chosen deliberately:
 - SAPI dictation accuracy is noticeably lower than cloud engines or
   Parakeet/Whisper-class models; this is the tradeoff for staying fully
   local with no ONNX integration risk (see architecture table above).
-- No text injection, history, or dictionary yet — the transcript only
-  appears in Murmur's own window so far.
+- The clipboard save/restore delays in `ClipboardInjector` (40ms before
+  paste, 200ms before restore) are unvalidated guesses — need tuning against
+  real target apps, especially Electron ones, which may need longer.
+- If Murmur's own window has focus when dictation finishes, the paste lands
+  in Murmur's transcript box — same behavior as a normal manual paste, but
+  worth confirming isn't surprising in practice.
+- No history or custom dictionary yet.
 
 ## Next steps (not yet done)
 
-1. Verify this skeleton builds, the hotkey fires, and dictation actually
-   produces text on real Windows.
-2. Clipboard+Ctrl-V text injection into the foreground app, tested against
-   VS Code/Cursor/Slack.
-3. Optional Vosk secondary engine.
-4. History window (SQLite) + custom dictionary.
+1. Verify this skeleton builds, the hotkey fires, dictation produces text,
+   and injection actually lands in VS Code, Cursor, and Slack on Windows —
+   tune the settle delays in `ClipboardInjector` against what's observed.
+2. Optional Vosk secondary engine.
+3. History window (SQLite) + custom dictionary.
