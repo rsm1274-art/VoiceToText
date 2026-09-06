@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Controls;
+using Murmur.Dictionary;
 using Murmur.History;
 using Murmur.Hotkey;
 using Murmur.Injection;
@@ -9,9 +11,12 @@ namespace Murmur;
 public partial class MainWindow : Window
 {
     private HotkeyManager? _hotkeyManager;
-    private ISpeechEngine? _speechEngine;
+    private ISpeechEngine? _systemSpeechEngine;
+    private ISpeechEngine? _voskSpeechEngine;
+    private ISpeechEngine? _activeSpeechEngine;
     private readonly ClipboardInjector _injector = new();
     private readonly HistoryStore _historyStore = new();
+    private readonly CustomDictionaryStore _dictionaryStore = new();
 
     public MainWindow()
     {
@@ -22,12 +27,22 @@ public partial class MainWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        _speechEngine = new SystemSpeechEngine();
-        SpeechStatusText.Text = _speechEngine.IsAvailable
-            ? "Speech: Windows dictation ready"
-            : "Speech unavailable: no recognizer/language pack installed, no " +
-              "default microphone, or desktop apps are blocked from the " +
-              "microphone in Windows Privacy settings.";
+        _systemSpeechEngine = new SystemSpeechEngine();
+        AttachEngineEvents(_systemSpeechEngine);
+
+        var voskModelPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Murmur", "models", "vosk-model-small-en-us-0.15");
+        _voskSpeechEngine = new VoskSpeechEngine(voskModelPath);
+        AttachEngineEvents(_voskSpeechEngine);
+
+        EngineSelector.Items.Add("Windows Speech (built-in)");
+        EngineSelector.Items.Add(_voskSpeechEngine.IsAvailable
+            ? "Vosk (offline, optional)"
+            : "Vosk (offline, optional) - model not found");
+        EngineSelector.SelectedIndex = 0;
+        _activeSpeechEngine = _systemSpeechEngine;
+        UpdateSpeechStatusText();
 
         _hotkeyManager = new HotkeyManager(this);
         HotkeyStatusText.Text = _hotkeyManager.IsAvailable
@@ -36,38 +51,64 @@ public partial class MainWindow : Window
               "or blocked by security policy. Push-to-talk is disabled until a " +
               "different hotkey is configured.";
 
-        var canDictate = _hotkeyManager.IsAvailable && _speechEngine.IsAvailable;
         _hotkeyManager.TalkStarted += (_, _) =>
         {
             TalkStateText.Text = "Listening...";
-            if (canDictate)
+            if (_activeSpeechEngine?.IsAvailable == true)
             {
-                _speechEngine.StartListening();
+                _activeSpeechEngine.StartListening();
             }
         };
         _hotkeyManager.TalkStopped += (_, _) =>
         {
             TalkStateText.Text = "Idle";
-            if (canDictate)
+            if (_activeSpeechEngine?.IsAvailable == true)
             {
-                _speechEngine.StopListening();
+                _activeSpeechEngine.StopListening();
             }
         };
 
-        _speechEngine.PartialResultRecognized += (_, text) =>
-            Dispatcher.Invoke(() => TranscriptBox.Text = text);
-        _speechEngine.FinalResultRecognized += (_, text) =>
+        TalkStateText.Text = "Idle";
+    }
+
+    // Both engines get their events attached up front. This is safe without
+    // per-engine subscribe/unsubscribe on switch because only the currently
+    // active engine ever has StartListening called on it, so the inactive
+    // one never raises anything.
+    private void AttachEngineEvents(ISpeechEngine engine)
+    {
+        engine.PartialResultRecognized += (_, text) =>
+            Dispatcher.Invoke(() => TranscriptBox.Text = Correct(text));
+        engine.FinalResultRecognized += (_, text) =>
             Dispatcher.Invoke(() =>
             {
-                TranscriptBox.Text = text;
+                var corrected = Correct(text);
+                TranscriptBox.Text = corrected;
                 // Fire-and-forget: injection is a background async flow (clipboard
                 // set -> paste -> restore) that shouldn't block the UI thread while
                 // it waits out its settle delays.
-                _ = _injector.InjectAsync(text);
-                _historyStore.Add(text);
+                _ = _injector.InjectAsync(corrected);
+                _historyStore.Add(corrected);
             });
+    }
 
-        TalkStateText.Text = "Idle";
+    private string Correct(string text) => DictionaryCorrector.Apply(text, _dictionaryStore.GetAll());
+
+    private void OnEngineSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _activeSpeechEngine = EngineSelector.SelectedIndex == 1 && _voskSpeechEngine?.IsAvailable == true
+            ? _voskSpeechEngine
+            : _systemSpeechEngine;
+        UpdateSpeechStatusText();
+    }
+
+    private void UpdateSpeechStatusText()
+    {
+        SpeechStatusText.Text = _activeSpeechEngine?.IsAvailable == true
+            ? "Speech: ready"
+            : "Speech unavailable for the selected engine: no recognizer/language pack, " +
+              "no default microphone, missing Vosk model, or desktop apps are blocked " +
+              "from the microphone in Windows Privacy settings.";
     }
 
     private void OnHistoryButtonClick(object sender, RoutedEventArgs e)
@@ -75,9 +116,15 @@ public partial class MainWindow : Window
         new HistoryWindow(_historyStore) { Owner = this }.Show();
     }
 
+    private void OnDictionaryButtonClick(object sender, RoutedEventArgs e)
+    {
+        new DictionaryWindow(_dictionaryStore) { Owner = this }.Show();
+    }
+
     private void OnClosed(object? sender, EventArgs e)
     {
         _hotkeyManager?.Dispose();
-        _speechEngine?.Dispose();
+        _systemSpeechEngine?.Dispose();
+        _voskSpeechEngine?.Dispose();
     }
 }

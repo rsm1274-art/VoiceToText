@@ -25,9 +25,20 @@
          Privacy > Microphone. Neither is guaranteed present; SystemSpeechEngine
          degrades to IsAvailable = false rather than throwing when missing. -->
     <PackageReference Include="System.Speech" Version="8.0.0" />
-    <!-- Local, file-based transcription history (%AppData%\Murmur\history.db).
-         No server, no ORM needed for one table. -->
+    <!-- Local, file-based transcription history and custom dictionary
+         (%AppData%\Murmur\history.db, dictionary.db). No server, no ORM
+         needed for tables this small. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
+    <!-- Optional secondary STT engine (Vosk), chosen over Parakeet/ONNX per
+         README's architecture table: a real pre-packaged offline model,
+         no NeMo->ONNX conversion, no execution-provider tuning. Vosk only
+         decodes PCM frames handed to it, so NAudio supplies the microphone
+         capture SAPI otherwise provides for free. The model itself (e.g.
+         vosk-model-small-en-us-0.15) is NOT bundled here - it's tens to
+         hundreds of MB and must be downloaded separately by whoever runs
+         this and placed at %AppData%\Murmur\models\<model-name>. -->
+    <PackageReference Include="Vosk" Version="0.3.38" />
+    <PackageReference Include="NAudio" Version="3.0.1" />
   </ItemGroup>
 
 </Project>

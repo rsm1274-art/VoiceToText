@@ -4,19 +4,26 @@ Local push-to-talk dictation for Windows 10/11 (x64). No cloud calls.
 
 ## Status
 
-Phase 1-3 + history: app skeleton, global hotkey trigger, Windows native
-speech (SAPI) wired to hold-to-talk, clipboard+Ctrl-V text injection into the
-foreground app, and a persisted, browsable transcription history. Built and
-written on a non-Windows container —
+All planned pieces are now in place: app skeleton, global hotkey trigger,
+Windows native speech (SAPI) wired to hold-to-talk, an optional offline Vosk
+engine, clipboard+Ctrl-V text injection into the foreground app, a
+persisted/browsable transcription history, and a custom dictionary for
+technical terms. Built and written on a non-Windows container —
 **not yet compiled or run on Windows**. Open `Murmur.sln` in Visual Studio
 (or `dotnet build` / `dotnet run` from `src/Murmur`) on a Windows machine to
 verify before relying on it.
 
-Prerequisites to actually see a transcription: a speech recognizer +
-language pack installed (Settings > Time & Language > Speech) and desktop
-apps allowed to use the microphone (Settings > Privacy > Microphone). If
-either is missing, the app disables dictation and says so instead of
-crashing — this still needs to be confirmed by hand on Windows.
+Prerequisites to actually see a transcription:
+- Windows Speech engine (default): a speech recognizer + language pack
+  installed (Settings > Time & Language > Speech) and desktop apps allowed
+  to use the microphone (Settings > Privacy > Microphone).
+- Vosk engine (optional, selectable in the Engine dropdown): a Vosk model
+  downloaded separately (not bundled — models run tens to hundreds of MB)
+  and extracted to `%AppData%\Murmur\models\vosk-model-small-en-us-0.15`.
+
+If either engine's prerequisites are missing, the app disables that engine
+in the UI and says why instead of crashing — this still needs to be
+confirmed by hand on Windows.
 
 ## Architecture decisions (and why)
 
@@ -27,7 +34,8 @@ integration points. Simpler alternatives were chosen deliberately:
 |---|---|---|---|
 | Hotkey trigger | `SetWindowsHookEx(WH_KEYBOARD_LL)` | `RegisterHotKey` + bounded `GetAsyncKeyState` poll of the *same* key | A global hook sees every keystroke on the machine — a keylogger signature. `RegisterHotKey` only ever sees the one registered combo. |
 | Text injection | `SendInput` with an Electron-detection fallback | Clipboard + simulated Ctrl+V, always | One code path instead of two; works uniformly across Win32/WPF/Electron/browser targets. |
-| Secondary STT engine | Parakeet TDT via ONNX Runtime | Windows built-in speech only, or Vosk if a second engine is wanted later | Skips ONNX Runtime, execution-provider tuning, and NeMo→ONNX conversion/licensing risk entirely. Not yet implemented. |
+| Secondary STT engine | Parakeet TDT via ONNX Runtime | Vosk (offline, optional, user-selectable) | Skips ONNX Runtime, execution-provider tuning, and NeMo→ONNX conversion/licensing risk entirely; a real pre-packaged offline model instead. |
+| Custom dictionary | Grammar-level vocabulary biasing at recognition time | Post-recognition find-and-replace of known mis-hearings | Neither SAPI's `DictationGrammar` nor Vosk's default model exposes a way to bias decoding toward specific terms; textual correction after the fact is the pragmatic alternative. |
 
 ## Current pieces
 
@@ -61,11 +69,28 @@ integration points. Simpler alternatives were chosen deliberately:
   file) rather than surfacing as a dictation failure.
 - `src/Murmur/HistoryWindow.xaml(.cs)` — lists all stored transcriptions,
   newest first, opened from the "History" button on the main window.
+- `src/Murmur/Speech/VoskSpeechEngine.cs` — optional secondary engine.
+  Captures 16kHz mono PCM via NAudio's `WaveInEvent` (Vosk itself only
+  decodes frames handed to it, unlike SAPI which owns the audio device) and
+  feeds it to a `VoskRecognizer`. Degrades to `IsAvailable = false` if the
+  model directory is missing or fails to load.
+- `src/Murmur/Dictionary/DictionaryEntry.cs`, `CustomDictionaryStore.cs` —
+  each entry is a correct `Term` plus comma-separated `Aliases` (common
+  mis-hearings), persisted at `%AppData%\Murmur\dictionary.db` with the same
+  degrade-on-failure pattern as history.
+- `src/Murmur/Dictionary/DictionaryCorrector.cs` — replaces each alias with
+  its term in recognized text, whole-word and case-insensitive, longest
+  alias first to avoid partial-overlap replacements. Applied to both partial
+  and final results before display/injection/history.
+- `src/Murmur/DictionaryWindow.xaml(.cs)` — add/list/delete dictionary
+  entries, opened from the "Dictionary" button on the main window.
 - `src/Murmur/MainWindow.xaml(.cs)` — window showing hotkey/speech
-  availability, live talk state, the transcript box, and a History button,
-  for manual verification. Holding Right Ctrl should start listening,
-  releasing should finalize the transcript, paste it into whatever window
-  has focus, and add it to history.
+  availability, an Engine dropdown (Windows Speech / Vosk — Vosk only
+  selectable if its model was found), live talk state, the transcript box,
+  and History/Dictionary buttons. Holding Right Ctrl should start listening
+  on whichever engine is selected, releasing should apply dictionary
+  corrections, finalize the transcript, paste it into whatever window has
+  focus, and add it to history.
 
 ## Known limitations
 
@@ -80,14 +105,20 @@ integration points. Simpler alternatives were chosen deliberately:
 - If Murmur's own window has focus when dictation finishes, the paste lands
   in Murmur's transcript box — same behavior as a normal manual paste, but
   worth confirming isn't surprising in practice.
-- No custom dictionary yet; history has no delete/search/export either —
-  browse-only for now.
+- Dictionary correction is a post-recognition text substitution, not true
+  grammar-level vocabulary biasing (see architecture table) — it only fixes
+  mis-hearings you've already seen and added as aliases, it can't improve
+  recognition of a term the engine has never produced anything close to.
+- Vosk's default English models produce lowercase, unpunctuated text; no
+  punctuation restoration or capitalization pass exists yet.
+- History has no delete/search/export — browse-only for now.
 
 ## Next steps (not yet done)
 
-1. Verify this skeleton builds, the hotkey fires, dictation produces text,
-   injection actually lands in VS Code, Cursor, and Slack, and history
-   persists across restarts — all on real Windows. Tune the settle delays in
+1. Verify everything on real Windows: hotkey fires, SAPI dictation produces
+   text, Vosk loads and transcribes once a model is downloaded, injection
+   lands correctly in VS Code/Cursor/Slack, dictionary corrections apply,
+   and history persists across restarts. Tune the settle delays in
    `ClipboardInjector` against what's observed.
-2. Optional Vosk secondary engine.
-3. Custom dictionary for forcing correct transcription of technical terms.
+2. Consider punctuation/capitalization post-processing, especially for Vosk.
+3. History delete/search/export.
