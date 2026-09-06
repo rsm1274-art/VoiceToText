@@ -4,10 +4,17 @@ Local push-to-talk dictation for Windows 10/11 (x64). No cloud calls.
 
 ## Status
 
-Phase 1 only: app skeleton + global hotkey trigger. Built and written on a
-non-Windows container — **not yet compiled or run on Windows**. Open
-`Murmur.sln` in Visual Studio (or `dotnet build` / `dotnet run` from
-`src/Murmur`) on a Windows machine to verify before relying on it.
+Phase 1 + 2: app skeleton, global hotkey trigger, and Windows native speech
+(SAPI) wired to hold-to-talk. Built and written on a non-Windows container —
+**not yet compiled or run on Windows**. Open `Murmur.sln` in Visual Studio
+(or `dotnet build` / `dotnet run` from `src/Murmur`) on a Windows machine to
+verify before relying on it.
+
+Prerequisites to actually see a transcription: a speech recognizer +
+language pack installed (Settings > Time & Language > Speech) and desktop
+apps allowed to use the microphone (Settings > Privacy > Microphone). If
+either is missing, the app disables dictation and says so instead of
+crashing — this still needs to be confirmed by hand on Windows.
 
 ## Architecture decisions (and why)
 
@@ -27,20 +34,36 @@ integration points. Simpler alternatives were chosen deliberately:
   Fires `TalkStarted`/`TalkStopped`. If registration fails (combo already
   claimed, or blocked by policy), the app disables the hotkey rather than
   crashing, and says so.
-- `src/Murmur/MainWindow.xaml(.cs)` — minimal window showing hotkey status
-  and live talk state, for manual verification.
+- `src/Murmur/Speech/ISpeechEngine.cs` — engine abstraction so a second
+  engine (e.g. Vosk) can be dropped in later without touching the UI/hotkey
+  wiring.
+- `src/Murmur/Speech/SystemSpeechEngine.cs` — dictation via
+  `System.Speech.Recognition` (SAPI). Accumulates recognized phrases across
+  a hold-to-talk session (SAPI reports completed phrases as the speaker
+  pauses, not one block at the end) and surfaces the joined text as both a
+  live partial and the final result. Degrades to `IsAvailable = false` if no
+  recognizer/language pack or default microphone is present, rather than
+  throwing on construction.
+- `src/Murmur/MainWindow.xaml(.cs)` — window showing hotkey/speech
+  availability, live talk state, and the transcript box, for manual
+  verification. Holding Right Ctrl should start listening and fill the
+  transcript box; releasing should finalize it.
 
 ## Known limitations
 
 - Push-to-talk requires the app to run un-elevated; some corporate AV/EDR
   tools may still block `RegisterHotKey` or the polling loop outright.
-- No audio capture, STT, injection, history, or dictionary yet — those are
-  later phases per the execution order in the project brief.
+- SAPI dictation accuracy is noticeably lower than cloud engines or
+  Parakeet/Whisper-class models; this is the tradeoff for staying fully
+  local with no ONNX integration risk (see architecture table above).
+- No text injection, history, or dictionary yet — the transcript only
+  appears in Murmur's own window so far.
 
 ## Next steps (not yet done)
 
-1. Verify this skeleton builds and the hotkey fires on real Windows.
-2. Windows native speech integration (`System.Speech` / OneCore Speech API).
-3. Clipboard+Ctrl-V text injection, tested against VS Code/Cursor/Slack.
-4. Optional Vosk secondary engine.
-5. History window (SQLite) + custom dictionary.
+1. Verify this skeleton builds, the hotkey fires, and dictation actually
+   produces text on real Windows.
+2. Clipboard+Ctrl-V text injection into the foreground app, tested against
+   VS Code/Cursor/Slack.
+3. Optional Vosk secondary engine.
+4. History window (SQLite) + custom dictionary.

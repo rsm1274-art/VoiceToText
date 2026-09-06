@@ -18,4 +18,13 @@
     <SignAssembly>false</SignAssembly>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- SAPI-based dictation. Requires a speech recognizer + language pack
+         installed on the target machine (Settings > Time & Language > Speech)
+         and "Let desktop apps access your microphone" enabled under Windows
+         Privacy > Microphone. Neither is guaranteed present; SystemSpeechEngine
+         degrades to IsAvailable = false rather than throwing when missing. -->
+    <PackageReference Include="System.Speech" Version="8.0.0" />
+  </ItemGroup>
+
 </Project>
